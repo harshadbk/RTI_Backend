@@ -11,7 +11,6 @@ EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 @router.post("/signup")
 def signup(user: UserSignup):
     try:
-        # ✅ Validation checks
         if user.password != user.confirm_password:
             raise HTTPException(status_code=400, detail="Passwords do not match")
 
@@ -21,7 +20,6 @@ def signup(user: UserSignup):
         if len(user.password) < 6:
             raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
 
-        # ✅ Check if email already exists in users table
         try:
             existing_user = supabase.table("users") \
                 .select("id") \
@@ -34,9 +32,8 @@ def signup(user: UserSignup):
         except HTTPException as e:
             raise e
         except Exception:
-            pass  # If check fails, continue to signup attempt
+            pass  
 
-        # ✅ Supabase Auth signup
         auth_res = supabase.auth.sign_up({
             "email": user.email,
             "password": user.password
@@ -49,7 +46,6 @@ def signup(user: UserSignup):
 
         user_id = auth_res.user.id
 
-        # ✅ FIX: Use insert instead of upsert (more reliable in postgrest-py 0.10.3)
         try:
             db_res = supabase.table("users").insert({
                 "id": user_id,
@@ -61,8 +57,6 @@ def signup(user: UserSignup):
 
             print("DB INSERT RESPONSE:", db_res)
 
-            # ✅ FIX: Check response properly for postgrest-py 0.10.3
-            # Empty data is still OK for insert — no error means success
             print("DB INSERT SUCCESS ✅")
 
         except Exception as db_err:
@@ -73,9 +67,7 @@ def signup(user: UserSignup):
                 raise HTTPException(status_code=400, detail="Email already registered")
 
             if "Expecting value" in error_msg:
-                # ✅ FIX: This is actually a SUCCESS in postgrest-py 0.10.3
-                # Empty response = insert worked but returned no data
-                print("Insert likely succeeded (empty response is OK) ✅")
+               print("Insert likely succeeded (empty response is OK) ✅")
             else:
                 raise HTTPException(
                     status_code=500,
