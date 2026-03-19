@@ -1,19 +1,13 @@
+import os
 from fastapi import FastAPI
-from app.routes.auth_routes import router as auth_router
-from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
 
 app = FastAPI()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # for dev (React)
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-app.include_router(auth_router)
-
 @app.get("/")
-def home():
-    return {"msg": "Backend running On railway "}
+def root():
+    return {"message": "API Running 🚀"}
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("app.main:app", host="0.0.0.0", port=port)
