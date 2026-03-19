@@ -1,20 +1,21 @@
 [build]
 builder = "nixpacks"
+buildCommand = "pip install -r requirements.txt"
 
 [deploy]
 startCommand = "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+restartPolicyType = "ON_FAILURE"
 ```
 
 ---
 
-### Your Backend Folder Should Now Have These Files
+### Update `runtime.txt`
 ```
-backend/
-├── app/
-│   └── main.py
-├── requirements.txt    ✅
-├── Procfile            ✅
-├── railway.toml        ✅
-├── runtime.txt         ✅ add this
-├── .python-version     ✅ add this
-└── .gitignore
+python-3.11.4
+```
+
+---
+
+### Update `.python-version`
+```
+3.11
