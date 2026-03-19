@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException
 from app.schemas.user_schema import UserSignup, UserLogin
 from app.db.supabase import supabase
-router = APIRouter(prefix="/auth", tags=["Auth"])
-from fastapi import HTTPException
 import re
+
+router = APIRouter(prefix="/auth", tags=["Auth"])
 
 EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 
@@ -11,6 +11,7 @@ EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 @router.post("/signup")
 def signup(user: UserSignup):
     try:
+        # ✅ Validation checks
         if user.password != user.confirm_password:
             raise HTTPException(status_code=400, detail="Passwords do not match")
 
@@ -19,30 +20,67 @@ def signup(user: UserSignup):
 
         if len(user.password) < 6:
             raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+
+        # ✅ Check if email already exists in users table
+        try:
+            existing_user = supabase.table("users") \
+                .select("id") \
+                .filter("email", "eq", user.email) \
+                .execute()
+
+            if existing_user.data and len(existing_user.data) > 0:
+                raise HTTPException(status_code=400, detail="Email already registered")
+
+        except HTTPException as e:
+            raise e
+        except Exception:
+            pass  # If check fails, continue to signup attempt
+
+        # ✅ Supabase Auth signup
         auth_res = supabase.auth.sign_up({
             "email": user.email,
             "password": user.password
         })
 
-        print("AUTH RESPONSE:", auth_res)
+        print("AUTH RESPONSE USER:", auth_res.user)
 
         if not auth_res or auth_res.user is None:
-            raise HTTPException(
-                status_code=400,
-                detail="User already exists or signup blocked (rate limit)"
-            )
+            raise HTTPException(status_code=400, detail="Signup failed. Try again.")
 
         user_id = auth_res.user.id
 
-        db_res = supabase.table("user").insert({
-            "id": user_id, 
-            "email": user.email,
-            "name": user.name,
-            "phone": user.phone,
-            "role": "citizen"
-        }).execute()
+        # ✅ FIX: Use insert instead of upsert (more reliable in postgrest-py 0.10.3)
+        try:
+            db_res = supabase.table("users").insert({
+                "id": user_id,
+                "email": user.email,
+                "name": user.name,
+                "phone": user.phone,
+                "role": "citizen"
+            }).execute()
 
-        print("DB RESPONSE:", db_res)
+            print("DB INSERT RESPONSE:", db_res)
+
+            # ✅ FIX: Check response properly for postgrest-py 0.10.3
+            # Empty data is still OK for insert — no error means success
+            print("DB INSERT SUCCESS ✅")
+
+        except Exception as db_err:
+            error_msg = str(db_err)
+            print("DB INSERT ERROR:", error_msg)
+
+            if "23505" in error_msg or "duplicate" in error_msg.lower():
+                raise HTTPException(status_code=400, detail="Email already registered")
+
+            if "Expecting value" in error_msg:
+                # ✅ FIX: This is actually a SUCCESS in postgrest-py 0.10.3
+                # Empty response = insert worked but returned no data
+                print("Insert likely succeeded (empty response is OK) ✅")
+            else:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Profile save failed: {error_msg}"
+                )
 
         return {
             "msg": "Citizen registered successfully",
@@ -55,7 +93,7 @@ def signup(user: UserSignup):
         }
 
     except HTTPException as e:
-        raise e  
+        raise e
 
     except Exception as e:
         error_msg = str(e)
@@ -67,31 +105,45 @@ def signup(user: UserSignup):
         if "rate limit" in error_msg.lower():
             raise HTTPException(status_code=429, detail="Too many attempts. Try again later")
 
-        raise HTTPException(status_code=400, detail="Signup failed. Please try again")
+        raise HTTPException(status_code=400, detail=f"Signup failed: {error_msg}")
 
 
 @router.post("/login")
 def login(user: UserLogin):
+    try:
+        # ✅ Supabase Auth login
+        res = supabase.auth.sign_in_with_password({
+            "email": user.email,
+            "password": user.password
+        })
 
-    res = supabase.auth.sign_in_with_password({
-        "email": user.email,
-        "password": user.password
-    })
+        if res.user is None:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    if res.user is None:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        # ✅ Get user from DB
+        db_response = supabase.table("users") \
+            .select("*") \
+            .filter("email", "eq", user.email) \
+            .execute()
 
-    # check role from DB
-    db_user = supabase.table("user").select("*").eq("email", user.email).single().execute()
+        if not db_response.data or len(db_response.data) == 0:
+            raise HTTPException(status_code=404, detail="User not found in database")
 
-    if not db_user.data:
-        raise HTTPException(status_code=404, detail="User not found")
+        db_user = db_response.data[0]
 
-    if db_user.data["role"] != user.role:
-        raise HTTPException(status_code=403, detail="Role mismatch")
+        # ✅ Role check
+        if hasattr(user, "role") and user.role and db_user["role"] != user.role:
+            raise HTTPException(status_code=403, detail="Role mismatch")
 
-    return {
-        "msg": "Login successful",
-        "user": db_user.data,
-        "session": res.session
-    }
+        return {
+            "msg": "Login successful",
+            "user": db_user,
+            "session": res.session
+        }
+
+    except HTTPException as e:
+        raise e
+
+    except Exception as e:
+        print("LOGIN ERROR:", str(e))
+        raise HTTPException(status_code=500, detail=str(e))

@@ -1,0 +1,29 @@
+# Python
+myenv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Environment Variables - MOST IMPORTANT 🔒
+.env
+.env.local
+.env.production
+
+# Node / React
+node_modules/
+dist/
+build/
+.npm
+
+# VS Code
+.vscode/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS Files
+.DS_Store
+Thumbs.db

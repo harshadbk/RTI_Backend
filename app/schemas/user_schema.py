@@ -1,6 +1,5 @@
 from pydantic import BaseModel, EmailStr
 
-# Signup (ONLY CITIZEN)
 class UserSignup(BaseModel):
     name: str
     email: EmailStr
@@ -9,8 +8,7 @@ class UserSignup(BaseModel):
     confirm_password: str
 
 
-# Login (ALL ROLES)
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
-    role: str   # citizen / pio / authority
+    role: str 
