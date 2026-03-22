@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException , BackgroundTasks
 from app.schemas.user_schema import UserSignup, UserLogin
 from app.db.supabase import supabase
 import re
@@ -89,9 +89,11 @@ async def signup(user: UserSignup, background_tasks: BackgroundTasks):
 
         raise HTTPException(status_code=400, detail=f"Signup failed: {error_msg}")
 
+
 @router.post("/login")
-async def login(user: UserLogin):
+def login(user: UserLogin):
     try:
+        # ✅ Supabase Auth login
         res = supabase.auth.sign_in_with_password({
             "email": user.email,
             "password": user.password
@@ -100,25 +102,29 @@ async def login(user: UserLogin):
         if res.user is None:
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
-        metadata = res.user.user_metadata
-        db_user = res.data
+        # ✅ Get user from DB
+        db_response = supabase.table("users") \
+            .select("*") \
+            .filter("email", "eq", user.email) \
+            .execute()
+
+        if not db_response.data or len(db_response.data) == 0:
+            raise HTTPException(status_code=404, detail="User not found in database")
+
+        db_user = db_response.data[0]
+
         if hasattr(user, "role") and user.role and db_user["role"] != user.role:
             raise HTTPException(status_code=403, detail="Role mismatch")
 
         return {
             "msg": "Login successful",
-            "user": {
-                "id": res.user.id,
-                "email": res.user.email,
-                "name": metadata.get("name"),
-                "phone": metadata.get("phone"),
-                "role": metadata.get("role")
-            },
+            "user": db_user,
             "session": res.session
         }
 
     except HTTPException as e:
         raise e
+
     except Exception as e:
         print("LOGIN ERROR:", str(e))
         raise HTTPException(status_code=500, detail=str(e))
