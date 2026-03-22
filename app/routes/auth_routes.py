@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException,BackgroundTasks
 from app.schemas.user_schema import UserSignup, UserLogin
 from app.db.supabase import supabase
 import re
@@ -8,9 +8,25 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 
 
-@router.post("/signup")
-def signup(user: UserSignup):
+# ✅ Runs AFTER response is sent — user doesn't wait!
+def insert_user_db(user_id, email, name, phone):
     try:
+        supabase.table("users").insert({
+            "id": user_id,
+            "email": email,
+            "name": name,
+            "phone": phone,
+            "role": "citizen"
+        }).execute()
+        print("DB INSERT SUCCESS ✅")
+    except Exception as e:
+        print("DB INSERT ERROR:", str(e))
+
+
+@router.post("/signup")
+async def signup(user: UserSignup, background_tasks: BackgroundTasks):
+    try:
+        # ✅ Validate first before any network call
         if user.password != user.confirm_password:
             raise HTTPException(status_code=400, detail="Passwords do not match")
 
@@ -20,60 +36,34 @@ def signup(user: UserSignup):
         if len(user.password) < 6:
             raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
 
-        try:
-            existing_user = supabase.table("users") \
-                .select("id") \
-                .filter("email", "eq", user.email) \
-                .execute()
-
-            if existing_user.data and len(existing_user.data) > 0:
-                raise HTTPException(status_code=400, detail="Email already registered")
-
-        except HTTPException as e:
-            raise e
-        except Exception:
-            pass  
-
+        # ✅ Single auth call with metadata — removed extra DB check before signup
         auth_res = supabase.auth.sign_up({
             "email": user.email,
-            "password": user.password
+            "password": user.password,
+            "options": {
+                "data": {
+                    "role": "citizen",   # ✅ stored in metadata
+                    "name": user.name,   # ✅ stored in metadata
+                    "phone": user.phone  # ✅ stored in metadata
+                }
+            }
         })
-
-        print("AUTH RESPONSE USER:", auth_res.user)
 
         if not auth_res or auth_res.user is None:
             raise HTTPException(status_code=400, detail="Signup failed. Try again.")
 
         user_id = auth_res.user.id
 
-        try:
-            db_res = supabase.table("users").insert({
-                "id": user_id,
-                "email": user.email,
-                "name": user.name,
-                "phone": user.phone,
-                "role": "citizen"
-            }).execute()
+        # ✅ DB insert runs in background — response sent immediately!
+        background_tasks.add_task(
+            insert_user_db,
+            user_id,
+            user.email,
+            user.name,
+            user.phone
+        )
 
-            print("DB INSERT RESPONSE:", db_res)
-
-            print("DB INSERT SUCCESS ✅")
-
-        except Exception as db_err:
-            error_msg = str(db_err)
-            print("DB INSERT ERROR:", error_msg)
-
-            if "23505" in error_msg or "duplicate" in error_msg.lower():
-                raise HTTPException(status_code=400, detail="Email already registered")
-
-            if "Expecting value" in error_msg:
-               print("Insert likely succeeded (empty response is OK) ✅")
-            else:
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Profile save failed: {error_msg}"
-                )
-
+        # ✅ Returned immediately without waiting for DB insert
         return {
             "msg": "Citizen registered successfully",
             "user": {
@@ -91,14 +81,13 @@ def signup(user: UserSignup):
         error_msg = str(e)
         print("SIGNUP ERROR:", error_msg)
 
-        if "User already registered" in error_msg:
+        if "User already registered" in error_msg or "23505" in error_msg:
             raise HTTPException(status_code=400, detail="Email already registered")
 
         if "rate limit" in error_msg.lower():
             raise HTTPException(status_code=429, detail="Too many attempts. Try again later")
 
         raise HTTPException(status_code=400, detail=f"Signup failed: {error_msg}")
-
 
 @router.post("/login")
 async def login(user: UserLogin):
