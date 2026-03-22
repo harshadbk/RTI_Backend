@@ -101,6 +101,7 @@ async def login(user: UserLogin):
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
         metadata = res.user.user_metadata
+        db_user = db_response.data
         if hasattr(user, "role") and user.role and db_user["role"] != user.role:
             raise HTTPException(status_code=403, detail="Role mismatch")
 
