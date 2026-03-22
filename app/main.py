@@ -19,7 +19,7 @@ app.add_middleware(
 
 @app.get("/")
 async def home():
-    return {"message": "API running 🚀"}
+    return {"message": "API running "}
 
 # This runs on EVERY request automatically
 @app.middleware("http")
@@ -29,9 +29,9 @@ async def log_request_time(request: Request, call_next):
     response = await call_next(request)
     
     end_time = time.time()
-    duration = (end_time - start_time) * 1000  # Convert to milliseconds
+    duration = (end_time - start_time) * 1000
     
-    print(f"⏱️ {request.method} {request.url.path} → {duration:.2f}ms")
+    print(f"{request.method} {request.url.path} → {duration:.2f}ms")
     
     return response
 

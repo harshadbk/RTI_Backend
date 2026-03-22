@@ -101,9 +101,8 @@ def signup(user: UserSignup):
 
 
 @router.post("/login")
-def login(user: UserLogin):
+async def login(user: UserLogin):
     try:
-        # ✅ Supabase Auth login
         res = supabase.auth.sign_in_with_password({
             "email": user.email,
             "password": user.password
@@ -112,30 +111,22 @@ def login(user: UserLogin):
         if res.user is None:
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
-        # ✅ Get user from DB
-        db_response = supabase.table("users") \
-            .select("*") \
-            .filter("email", "eq", user.email) \
-            .execute()
-
-        if not db_response.data or len(db_response.data) == 0:
-            raise HTTPException(status_code=404, detail="User not found in database")
-
-        db_user = db_response.data[0]
-
-        # ✅ Role check
-        if hasattr(user, "role") and user.role and db_user["role"] != user.role:
-            raise HTTPException(status_code=403, detail="Role mismatch")
+        metadata = res.user.user_metadata
 
         return {
             "msg": "Login successful",
-            "user": db_user,
+            "user": {
+                "id": res.user.id,
+                "email": res.user.email,
+                "name": metadata.get("name"),
+                "phone": metadata.get("phone"),
+                "role": metadata.get("role")
+            },
             "session": res.session
         }
 
     except HTTPException as e:
         raise e
-
     except Exception as e:
         print("LOGIN ERROR:", str(e))
         raise HTTPException(status_code=500, detail=str(e))
