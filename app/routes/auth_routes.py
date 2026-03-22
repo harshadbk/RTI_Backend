@@ -75,11 +75,13 @@ async def login(user: UserLogin):
         if res.user is None:
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
-        db_response = supabase.table("users") \
-            .select("id, email, name, phone, role") \
-            .eq("id", res.user.id) \                   
-            .single() \                               
+        db_response = (
+            supabase.table("users")
+            .select("id, email, name, phone, role")
+            .eq("id", res.user.id)
+            .single()
             .execute()
+        )
 
         if not db_response.data:
             raise HTTPException(status_code=404, detail="User not found")
