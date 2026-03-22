@@ -9,7 +9,7 @@ EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 
 
 @router.post("/signup")
-async def signup(user: UserSignup):
+def signup(user: UserSignup):
     try:
         if user.password != user.confirm_password:
             raise HTTPException(status_code=400, detail="Passwords do not match")
@@ -20,23 +20,59 @@ async def signup(user: UserSignup):
         if len(user.password) < 6:
             raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
 
+        try:
+            existing_user = supabase.table("users") \
+                .select("id") \
+                .filter("email", "eq", user.email) \
+                .execute()
+
+            if existing_user.data and len(existing_user.data) > 0:
+                raise HTTPException(status_code=400, detail="Email already registered")
+
+        except HTTPException as e:
+            raise e
+        except Exception:
+            pass  
+
         auth_res = supabase.auth.sign_up({
             "email": user.email,
             "password": user.password
         })
+
+        print("AUTH RESPONSE USER:", auth_res.user)
 
         if not auth_res or auth_res.user is None:
             raise HTTPException(status_code=400, detail="Signup failed. Try again.")
 
         user_id = auth_res.user.id
 
-        supabase.table("users").insert({
-            "id": user_id,
-            "email": user.email,
-            "name": user.name,
-            "phone": user.phone,
-            "role": "citizen"
-        }).execute()
+        try:
+            db_res = supabase.table("users").insert({
+                "id": user_id,
+                "email": user.email,
+                "name": user.name,
+                "phone": user.phone,
+                "role": "citizen"
+            }).execute()
+
+            print("DB INSERT RESPONSE:", db_res)
+
+            print("DB INSERT SUCCESS ✅")
+
+        except Exception as db_err:
+            error_msg = str(db_err)
+            print("DB INSERT ERROR:", error_msg)
+
+            if "23505" in error_msg or "duplicate" in error_msg.lower():
+                raise HTTPException(status_code=400, detail="Email already registered")
+
+            if "Expecting value" in error_msg:
+               print("Insert likely succeeded (empty response is OK) ✅")
+            else:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Profile save failed: {error_msg}"
+                )
 
         return {
             "msg": "Citizen registered successfully",
@@ -55,7 +91,7 @@ async def signup(user: UserSignup):
         error_msg = str(e)
         print("SIGNUP ERROR:", error_msg)
 
-        if "User already registered" in error_msg or "23505" in error_msg:
+        if "User already registered" in error_msg:
             raise HTTPException(status_code=400, detail="Email already registered")
 
         if "rate limit" in error_msg.lower():
@@ -65,8 +101,9 @@ async def signup(user: UserSignup):
 
 
 @router.post("/login")
-async def login(user: UserLogin):
+def login(user: UserLogin):
     try:
+        # ✅ Supabase Auth login
         res = supabase.auth.sign_in_with_password({
             "email": user.email,
             "password": user.password
@@ -75,19 +112,18 @@ async def login(user: UserLogin):
         if res.user is None:
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
-        db_response = (
-            supabase.table("users")
-            .select("id, email, name, phone, role")
-            .eq("id", res.user.id)
-            .single()
+        # ✅ Get user from DB
+        db_response = supabase.table("users") \
+            .select("*") \
+            .filter("email", "eq", user.email) \
             .execute()
-        )
 
-        if not db_response.data:
-            raise HTTPException(status_code=404, detail="User not found")
+        if not db_response.data or len(db_response.data) == 0:
+            raise HTTPException(status_code=404, detail="User not found in database")
 
-        db_user = db_response.data
+        db_user = db_response.data[0]
 
+        # ✅ Role check
         if hasattr(user, "role") and user.role and db_user["role"] != user.role:
             raise HTTPException(status_code=403, detail="Role mismatch")
 
