@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException,BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks
 from app.schemas.user_schema import UserSignup, UserLogin
 from app.db.supabase import supabase
 import re
@@ -101,6 +101,18 @@ async def login(user: UserLogin):
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
         metadata = res.user.user_metadata
+        actual_role = metadata.get("role")
+
+        # ✅ Check role exists in metadata
+        if not actual_role:
+            raise HTTPException(status_code=403, detail="Role not assigned to this account")
+
+        # ✅ Check selected role matches actual role
+        if user.role != actual_role:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Access denied! You are not a {user.role}"
+            )
 
         return {
             "msg": "Login successful",
