@@ -9,7 +9,7 @@ EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 
 
 @router.post("/signup")
-def signup(user: UserSignup):
+async def signup(user: UserSignup):
     try:
         if user.password != user.confirm_password:
             raise HTTPException(status_code=400, detail="Passwords do not match")
@@ -101,7 +101,7 @@ def signup(user: UserSignup):
 
 
 @router.post("/login")
-def login(user: UserLogin):
+async def login(user: UserLogin):
     try:
         # ✅ Supabase Auth login
         res = supabase.auth.sign_in_with_password({
