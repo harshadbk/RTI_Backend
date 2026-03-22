@@ -101,18 +101,8 @@ async def login(user: UserLogin):
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
         metadata = res.user.user_metadata
-        actual_role = metadata.get("role")
-
-        # ✅ Check role exists in metadata
-        if not actual_role:
-            raise HTTPException(status_code=403, detail="Role not assigned to this account")
-
-        # ✅ Check selected role matches actual role
-        if user.role != actual_role:
-            raise HTTPException(
-                status_code=403,
-                detail=f"Access denied! You are not a {user.role}"
-            )
+        if hasattr(user, "role") and user.role and db_user["role"] != user.role:
+            raise HTTPException(status_code=403, detail="Role mismatch")
 
         return {
             "msg": "Login successful",
